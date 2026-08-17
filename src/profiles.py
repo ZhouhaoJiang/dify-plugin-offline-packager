@@ -21,7 +21,6 @@ class RuntimeProfile:
     name: str
     display_name: str
     dify_version: str
-    edition: str
     deployment: str
     runtime_image: str
     image_digest: str
@@ -75,7 +74,7 @@ def load_catalog(path: Path = DEFAULT_CATALOG_PATH) -> ProfileCatalog:
     except (OSError, json.JSONDecodeError) as error:
         raise ProfileError(f"cannot load runtime profiles from {path}: {error}") from error
 
-    if raw.get("schema_version") != 1:
+    if raw.get("schema_version") != 2:
         raise ProfileError("unsupported runtime profile schema_version")
     raw_profiles = raw.get("profiles")
     if not isinstance(raw_profiles, dict) or not raw_profiles:
@@ -85,7 +84,6 @@ def load_catalog(path: Path = DEFAULT_CATALOG_PATH) -> ProfileCatalog:
     required = (
         "display_name",
         "dify_version",
-        "edition",
         "deployment",
         "runtime_image",
         "image_digest",
@@ -143,7 +141,7 @@ def load_catalog(path: Path = DEFAULT_CATALOG_PATH) -> ProfileCatalog:
             **strings,
         )
 
-    return ProfileCatalog(schema_version=1, profiles=profiles)
+    return ProfileCatalog(schema_version=2, profiles=profiles)
 
 
 def select_runtime(

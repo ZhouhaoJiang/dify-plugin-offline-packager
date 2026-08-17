@@ -12,8 +12,8 @@
 
 | Dify 部署 | Profile | 目标 daemon 镜像 | linux/amd64 | linux/arm64 |
 | --- | --- | --- | --- | --- |
-| Enterprise Compose 3.9.2 | `enterprise-3.9.2` | `langgenius/dify-ee-plugin-daemon-local:3.9.2` | `integration-tested` | `not-tested` |
-| Enterprise Compose 3.12.0 | `enterprise-3.12.0` | `langgenius/dify-ee-plugin-daemon-local:3.12.0` | `integration-tested` | `not-tested` |
+| Docker Compose 3.9.2 | `dify-compose-3.9.2` | `langgenius/dify-ee-plugin-daemon-local:3.9.2` | `integration-tested` | `not-tested` |
+| Docker Compose 3.12.0 | `dify-compose-3.12.0` | `langgenius/dify-ee-plugin-daemon-local:3.12.0` | `integration-tested` | `not-tested` |
 
 验收 fixture 为 `langgenius/openai_api_compatible:0.0.59`。验证结论只覆盖插件依赖的打包、签名、验签和离线安装，不等价于插件业务 API 的功能验收。
 
@@ -21,7 +21,7 @@
 
 ## 为什么没有把所有 Dify 版本都写成支持
 
-Dify Enterprise Compose 3.5.2 使用 `langgenius/dify-plugin-daemon:0.2.0-local`。对应上游 `0.2.0` 的 [`docker/local.dockerfile`](https://github.com/langgenius/dify-plugin-daemon/blob/0.2.0/docker/local.dockerfile) 构建 `/app/main`，但没有把 `cmd/commandline` 构建为 `/app/commandline` 放进运行时镜像。当前工具的打包和组织签名流程要求使用目标版本提供的 Dify CLI，因此 3.5.2 暂不列入可选 profile。
+Dify Docker Compose 3.5.2 使用 `langgenius/dify-plugin-daemon:0.2.0-local`。对应上游 `0.2.0` 的 [`docker/local.dockerfile`](https://github.com/langgenius/dify-plugin-daemon/blob/0.2.0/docker/local.dockerfile) 构建 `/app/main`，但没有把 `cmd/commandline` 构建为 `/app/commandline` 放进运行时镜像。当前工具的打包和组织签名流程要求使用目标版本提供的 Dify CLI，因此 3.5.2 暂不列入可选 profile。
 
 这项边界是有意保留的：复用其他 Dify 版本的 CLI 可能引入包格式或签名语义偏差；把无法由本仓库复现构建的预编译 CLI 直接提交到仓库也不满足可审计要求。后续若要支持旧版本，应从对应上游 tag 可复现地构建 CLI，并完成目标 daemon 的上传安装验收。
 

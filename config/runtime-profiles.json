@@ -1,10 +1,9 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "profiles": {
-    "enterprise-3.9.2": {
-      "display_name": "Dify Enterprise Docker Compose 3.9.2",
+    "dify-compose-3.9.2": {
+      "display_name": "Dify Docker Compose 3.9.2",
       "dify_version": "3.9.2",
-      "edition": "enterprise",
       "deployment": "docker-compose",
       "runtime_image": "langgenius/dify-ee-plugin-daemon-local:3.9.2",
       "image_digest": "sha256:f2d910363a8b35f63e0f621c140144e7b427bcf8250266d3d83069ec0d5b7c27",
@@ -25,10 +24,9 @@
         }
       }
     },
-    "enterprise-3.12.0": {
-      "display_name": "Dify Enterprise Docker Compose 3.12.0",
+    "dify-compose-3.12.0": {
+      "display_name": "Dify Docker Compose 3.12.0",
       "dify_version": "3.12.0",
-      "edition": "enterprise",
       "deployment": "docker-compose",
       "runtime_image": "langgenius/dify-ee-plugin-daemon-local:3.12.0",
       "image_digest": "sha256:f4e2fdbd5eb4d98d7bc998fb3f2090c6864e8b74729aeed8f1cd5180f52e6ee2",

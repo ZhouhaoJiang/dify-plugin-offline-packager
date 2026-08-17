@@ -14,8 +14,8 @@ import profiles  # noqa: E402
 class ProfileCatalogTest(unittest.TestCase):
     def test_repository_catalog_has_supported_profiles(self) -> None:
         catalog = profiles.load_catalog()
-        selected = catalog.get("enterprise-3.12.0")
-        self.assertEqual(selected.name, "enterprise-3.12.0")
+        selected = catalog.get("dify-compose-3.12.0")
+        self.assertEqual(selected.name, "dify-compose-3.12.0")
         self.assertEqual(selected.python_version, "3.12")
         self.assertEqual(
             selected.platform_status("linux/amd64")["status"],
@@ -26,7 +26,7 @@ class ProfileCatalogTest(unittest.TestCase):
         catalog = profiles.load_catalog()
         selection = profiles.select_runtime(
             catalog,
-            "enterprise-3.9.2",
+            "dify-compose-3.9.2",
             runtime_image="registry.example.invalid/custom:3.9.2",
         )
         self.assertTrue(selection.customized)
@@ -37,7 +37,7 @@ class ProfileCatalogTest(unittest.TestCase):
 
     def test_rejects_empty_profile_catalog(self) -> None:
         document = {
-            "schema_version": 1,
+            "schema_version": 2,
             "profiles": {},
         }
         with tempfile.TemporaryDirectory() as temporary:

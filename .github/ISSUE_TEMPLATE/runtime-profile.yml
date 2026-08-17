@@ -7,8 +7,8 @@ body:
   - type: input
     id: deployment
     attributes:
-      label: Exact Dify edition, deployment method, and version
-      placeholder: Dify Enterprise Docker Compose 3.x.y
+      label: Exact Dify deployment method and version
+      placeholder: Dify Docker Compose 3.x.y
     validations:
       required: true
   - type: input

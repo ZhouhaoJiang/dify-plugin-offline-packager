@@ -22,7 +22,7 @@ class CliTest(unittest.TestCase):
         )
 
     def test_runtime_errors_rejects_python_mismatch(self) -> None:
-        selection = cli.select_runtime(cli.CATALOG, "enterprise-3.12.0")
+        selection = cli.select_runtime(cli.CATALOG, "dify-compose-3.12.0")
         probe = {
             "python_version": "3.11.9",
             "uv_path": "/usr/bin/uv",
@@ -39,7 +39,7 @@ class CliTest(unittest.TestCase):
         self.assertTrue(any("Python 3.12" in error for error in errors))
 
     def test_runtime_errors_rejects_image_digest_mismatch(self) -> None:
-        selection = cli.select_runtime(cli.CATALOG, "enterprise-3.12.0")
+        selection = cli.select_runtime(cli.CATALOG, "dify-compose-3.12.0")
         probe = {
             "python_version": "3.12.13",
             "uv_path": "/usr/bin/uv",
