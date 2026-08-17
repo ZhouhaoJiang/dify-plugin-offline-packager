@@ -4,11 +4,23 @@ All notable changes to this project are documented here. The project follows Sem
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-17
+
+### Added
+
+- Complete Chinese and English README documentation.
+
+### Changed
+
+- Renamed runtime profiles to deployment-focused `dify-compose-*` identifiers.
+- Removed the unused deployment-category field from profile configuration and audit output.
+- Updated public wording to describe Dify Docker Compose versions without product-tier labels.
+
 ## [0.2.0] - 2026-08-17
 
 ### Added
 
-- Versioned runtime profiles for Dify Enterprise Compose 3.9.2 and 3.12.0.
+- Versioned runtime profiles for Dify Docker Compose 3.9.2 and 3.12.0.
 - `profiles` and `doctor` commands.
 - Runtime checks for CPU architecture, Python, uv, Dify CLI presence, and CLI SHA-256.
 - Explicit compatibility, architecture, security, and contribution documentation.
@@ -23,4 +35,4 @@ All notable changes to this project are documented here. The project follows Sem
 
 ## [0.1.0] - 2026-08-17
 
-- Initial Dify Enterprise Compose 3.12.0 offline packaging implementation.
+- Initial Dify Docker Compose 3.12.0 offline packaging implementation.

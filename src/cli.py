@@ -19,7 +19,7 @@ from profiles import ProfileError, RuntimeSelection, load_catalog, select_runtim
 
 ROOT = Path(__file__).resolve().parent.parent
 CATALOG = load_catalog()
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 
 
 class CliError(RuntimeError):
@@ -113,7 +113,6 @@ def profile_payload(selection: RuntimeSelection, platform: str) -> dict[str, obj
         "name": profile.name,
         "display_name": profile.display_name,
         "dify_version": profile.dify_version,
-        "edition": profile.edition,
         "deployment": profile.deployment,
         "support_status": profile.support_status,
         "expected_image_digest": profile.image_digest,

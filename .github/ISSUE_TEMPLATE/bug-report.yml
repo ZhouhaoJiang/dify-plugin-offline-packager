@@ -19,8 +19,8 @@ body:
     attributes:
       label: Runtime profile
       options:
-        - enterprise-3.9.2
-        - enterprise-3.12.0
+        - dify-compose-3.9.2
+        - dify-compose-3.12.0
         - Custom runtime override
     validations:
       required: true

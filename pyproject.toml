@@ -1,6 +1,6 @@
 [project]
 name = "dify-plugin-offline-packager"
-version = "0.2.0"
+version = "0.3.0"
 description = "Build and verify Python plugin packages for versioned Dify offline runtimes"
 readme = "README.md"
 requires-python = ">=3.10"
