@@ -1,0 +1,8 @@
+services:
+  plugin_daemon:
+    environment:
+      FORCE_VERIFYING_SIGNATURE: "true"
+      THIRD_PARTY_SIGNATURE_VERIFICATION_ENABLED: "true"
+      THIRD_PARTY_SIGNATURE_VERIFICATION_PUBLIC_KEYS: /app/keys/offline-packager.public.pem
+    volumes:
+      - ./keys/offline-packager.public.pem:/app/keys/offline-packager.public.pem:ro
