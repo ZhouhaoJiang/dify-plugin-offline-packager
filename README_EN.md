@@ -52,7 +52,86 @@ The tool:
 
 The host may run macOS. `--platform linux/amd64` or `linux/arm64` selects the actual container architecture used to build wheels.
 
-## Quick start
+## Build in GitHub Actions after forking
+
+Fork owners can perform download, runtime inspection, packaging, signing, and no-network verification entirely from the GitHub UI, without installing Docker locally.
+
+### 1. Fork and enable the workflow
+
+1. Fork this repository;
+2. open the fork's **Actions** page and enable workflows;
+3. select **Build offline package**, then click **Run workflow**.
+
+A fork never inherits Actions Secrets from the upstream repository. The build uses only download locations and keys configured by the current fork owner.
+
+### 2. Prepare the source URL and hash
+
+`workflow_dispatch` cannot upload a local file. The source `.difypkg` must therefore be downloadable over HTTPS by a GitHub-hosted runner. Calculate the input SHA-256 locally first:
+
+```bash
+# macOS
+shasum -a 256 plugin.difypkg
+
+# Linux
+sha256sum plugin.difypkg
+```
+
+A public download URL can be entered in `package_url`. Do not place a private or presigned URL in a visible workflow input; store it as a Repository Secret in the fork:
+
+```bash
+printf '%s' 'https://storage.example.com/private/plugin.difypkg?...' \
+  | gh secret set DIFY_PLUGIN_PACKAGE_URL
+```
+
+If the source is reachable only from an isolated network, use the local CLI or a reviewed self-hosted runner. Never commit a customer package to a public fork.
+
+### 3. Complete the Run workflow form
+
+| Input | Value |
+| --- | --- |
+| `package_url` | Public HTTPS URL; leave empty when using the `DIFY_PLUGIN_PACKAGE_URL` secret |
+| `package_filename` | Output label such as `langgenius-openai_api_compatible_0.0.59.difypkg`; it does not upload a local file |
+| `package_sha256` | Full 64-character SHA-256 of the source; a mismatch stops the run |
+| `profile` | Must match the target Dify deployment version |
+| `architecture` | Linux CPU architecture of plugin daemon, not the browser or local computer |
+| `signing_mode` | Use `ephemeral` for a first run; use `repository-secrets` for a reusable organization key |
+| `index_url` | Public Python package index; use the `DIFY_PYPI_INDEX_URL` secret for a private index |
+
+`ephemeral` creates a new temporary private key for each run and deletes it before artifact upload. The artifact contains only the corresponding public key. The target Dify deployment must trust that newly generated public key for each run.
+
+For one organization key shared across multiple package builds, generate the pair in a controlled environment outside the repository checkout:
+
+```bash
+mkdir -p ../dify-offline-packager-keys
+
+./dify-offline-packager keygen \
+  --profile dify-compose-3.12.0 \
+  --platform linux/amd64 \
+  --output-dir ../dify-offline-packager-keys
+
+base64 < ../dify-offline-packager-keys/offline-packager.private.pem \
+  | tr -d '\n' | gh secret set DIFY_PLUGIN_PRIVATE_KEY_B64
+
+base64 < ../dify-offline-packager-keys/offline-packager.public.pem \
+  | tr -d '\n' | gh secret set DIFY_PLUGIN_PUBLIC_KEY_B64
+```
+
+Then select `repository-secrets`. The Action never uploads the private key; it includes the public key in every artifact for deployment-side comparison.
+
+### 4. Download and deploy the result
+
+After a successful run, download the `dify-offline-*` item under **Artifacts**. It contains:
+
+- `*-offline-linux-*.difypkg`: the offline plugin package to upload to Dify;
+- `*.difypkg.report.json`: runtime identity, dependency, signing, and no-network evidence;
+- `offline-packager.public.pem`: the public key the target Dify deployment must trust;
+- `SHA256SUMS` and `NEXT_STEPS.md`: integrity checks and next steps.
+
+Artifacts are retained for 7 days by default. Configure and verify the public key using the [Compose override example](deploy/docker-compose.third-party-signatures.yaml), then upload `*-offline-linux-*.difypkg`, not the original source package.
+
+The ability to execute a `linux/arm64` Action does not grant that architecture an integration-tested status. The [compatibility and validation matrix](docs/compatibility.md) remains authoritative.
+
+## Local CLI quick start
 
 List the declared runtime profiles first:
 
@@ -73,10 +152,12 @@ Inspect the target runtime:
 Generate a signing key pair owned by your organization:
 
 ```bash
+mkdir -p ../dify-offline-packager-keys
+
 ./dify-offline-packager keygen \
   --profile dify-compose-3.12.0 \
   --platform linux/amd64 \
-  --output-dir ./keys
+  --output-dir ../dify-offline-packager-keys
 ```
 
 Keep the private key only in the controlled build environment. The Dify server needs only the public key.
@@ -88,8 +169,8 @@ Build, sign, and verify without network access:
   --profile dify-compose-3.12.0 \
   --platform linux/amd64 \
   --index-url https://pypi.org/simple \
-  --private-key ./keys/offline-packager.private.pem \
-  --public-key ./keys/offline-packager.public.pem
+  --private-key ../dify-offline-packager-keys/offline-packager.private.pem \
+  --public-key ../dify-offline-packager-keys/offline-packager.public.pem
 ```
 
 Successful execution produces:
@@ -128,7 +209,7 @@ Verify the third-party signature:
 ./dify-offline-packager verify-signature ./plugin-offline-linux-amd64.difypkg \
   --profile dify-compose-3.12.0 \
   --platform linux/amd64 \
-  --public-key ./keys/offline-packager.public.pem
+  --public-key ../dify-offline-packager-keys/offline-packager.public.pem
 ```
 
 The [Compose override example](deploy/docker-compose.third-party-signatures.yaml) shows how to mount the public key. Compare every environment variable with the target Dify version and run `docker compose ... config` before applying it. Never mount the private key on the Dify server.
@@ -136,6 +217,8 @@ The [Compose override example](deploy/docker-compose.third-party-signatures.yaml
 ## Security boundaries
 
 - Building a Python sdist executes third-party build code. Use a dedicated worker and do not mount the Docker socket, host home directory, or unrelated credentials.
+- When an Action uses a private Python index, build code can read that index URL. Use only a least-privilege, read-only, revocable download credential.
+- Do not place a private package URL in a visible workflow input, and never commit source packages, private keys, or credentials to a public fork.
 - The private key is mounted only in a separate `--network none` signing container, followed immediately by public-key verification.
 - A successful offline installation is not a plugin business-function test or a dependency vulnerability scan.
 - The default extracted-size limit is 50 MB. Check the target Dify package limit before changing `--max-size-mb`.

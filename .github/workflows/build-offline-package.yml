@@ -1,0 +1,288 @@
+name: Build offline package
+
+on:
+  workflow_dispatch:
+    inputs:
+      package_url:
+        description: Public HTTPS .difypkg URL; leave empty to use DIFY_PLUGIN_PACKAGE_URL
+        required: false
+        type: string
+      package_filename:
+        description: Output label ending in .difypkg; this does not upload a local file
+        required: true
+        default: plugin.difypkg
+        type: string
+      package_sha256:
+        description: Expected SHA-256 of the source .difypkg
+        required: true
+        type: string
+      profile:
+        description: Target Dify runtime profile
+        required: true
+        default: dify-compose-3.12.0
+        type: choice
+        options:
+          - dify-compose-3.12.0
+          - dify-compose-3.9.2
+      architecture:
+        description: Target plugin daemon CPU architecture
+        required: true
+        default: amd64
+        type: choice
+        options:
+          - amd64
+          - arm64
+      signing_mode:
+        description: Ephemeral emits a new public key; repository-secrets reuses organization keys
+        required: true
+        default: ephemeral
+        type: choice
+        options:
+          - ephemeral
+          - repository-secrets
+      index_url:
+        description: Public Python package index; DIFY_PYPI_INDEX_URL secret takes precedence
+        required: true
+        default: https://pypi.org/simple
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Package ${{ inputs.profile }} / linux/${{ inputs.architecture }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Enable ARM64 emulation
+        if: ${{ inputs.architecture == 'arm64' }}
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+        with:
+          platforms: arm64
+
+      - name: Download and verify source package
+        id: workspace
+        shell: bash
+        env:
+          INPUT_PACKAGE_URL: ${{ inputs.package_url }}
+          SECRET_PACKAGE_URL: ${{ secrets.DIFY_PLUGIN_PACKAGE_URL }}
+          INPUT_PACKAGE_FILENAME: ${{ inputs.package_filename }}
+          EXPECTED_SHA256: ${{ inputs.package_sha256 }}
+          INPUT_ARCHITECTURE: ${{ inputs.architecture }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+
+          package_url="$INPUT_PACKAGE_URL"
+          if [[ -z "$package_url" ]]; then
+            package_url="$SECRET_PACKAGE_URL"
+          fi
+          if [[ -z "$package_url" ]]; then
+            echo "Set package_url or the DIFY_PLUGIN_PACKAGE_URL repository secret." >&2
+            exit 1
+          fi
+          if [[ "$package_url" != https://* ]]; then
+            echo "The source package URL must use HTTPS." >&2
+            exit 1
+          fi
+          if [[ ! "$INPUT_PACKAGE_FILENAME" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*\.difypkg$ ]]; then
+            echo "package_filename must be a simple .difypkg file name." >&2
+            exit 1
+          fi
+
+          expected_sha256="${EXPECTED_SHA256,,}"
+          if [[ ! "$expected_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "package_sha256 must contain exactly 64 hexadecimal characters." >&2
+            exit 1
+          fi
+
+          work_root="$(mktemp -d "${RUNNER_TEMP}/dify-offline-package.XXXXXX")"
+          mkdir -p "$work_root/input" "$work_root/dist" "$work_root/keys"
+          source_path="$work_root/input/$INPUT_PACKAGE_FILENAME"
+          output_stem="${INPUT_PACKAGE_FILENAME%.difypkg}"
+          output_path="$work_root/dist/${output_stem}-offline-linux-${INPUT_ARCHITECTURE}.difypkg"
+
+          curl \
+            --proto '=https' \
+            --proto-redir '=https' \
+            --fail \
+            --show-error \
+            --silent \
+            --location \
+            --retry 3 \
+            --retry-all-errors \
+            --connect-timeout 30 \
+            --max-time 900 \
+            --max-filesize 52428800 \
+            --output "$source_path" \
+            "$package_url"
+
+          actual_sha256="$(sha256sum "$source_path" | cut -d ' ' -f 1)"
+          if [[ "$actual_sha256" != "$expected_sha256" ]]; then
+            echo "Source SHA-256 mismatch: expected $expected_sha256, got $actual_sha256." >&2
+            exit 1
+          fi
+          unzip -tqq "$source_path"
+
+          {
+            echo "work_root=$work_root"
+            echo "source_path=$source_path"
+            echo "output_path=$output_path"
+            echo "platform=linux/$INPUT_ARCHITECTURE"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Inspect target runtime
+        env:
+          PROFILE: ${{ inputs.profile }}
+          PLATFORM: ${{ steps.workspace.outputs.platform }}
+        run: ./dify-offline-packager doctor --profile "$PROFILE" --platform "$PLATFORM"
+
+      - name: Prepare signing key
+        id: signing
+        shell: bash
+        env:
+          SIGNING_MODE: ${{ inputs.signing_mode }}
+          PROFILE: ${{ inputs.profile }}
+          PLATFORM: ${{ steps.workspace.outputs.platform }}
+          WORK_ROOT: ${{ steps.workspace.outputs.work_root }}
+          PRIVATE_KEY_B64: ${{ secrets.DIFY_PLUGIN_PRIVATE_KEY_B64 }}
+          PUBLIC_KEY_B64: ${{ secrets.DIFY_PLUGIN_PUBLIC_KEY_B64 }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+
+          key_dir="$WORK_ROOT/keys"
+          private_key="$key_dir/offline-packager.private.pem"
+          public_key="$key_dir/offline-packager.public.pem"
+
+          if [[ "$SIGNING_MODE" == "repository-secrets" ]]; then
+            if [[ -z "$PRIVATE_KEY_B64" || -z "$PUBLIC_KEY_B64" ]]; then
+              echo "repository-secrets mode requires both signing-key secrets." >&2
+              exit 1
+            fi
+            printf '%s' "$PRIVATE_KEY_B64" | base64 --decode > "$private_key"
+            printf '%s' "$PUBLIC_KEY_B64" | base64 --decode > "$public_key"
+            test -s "$private_key"
+            test -s "$public_key"
+            chmod 0600 "$private_key"
+            chmod 0644 "$public_key"
+          else
+            ./dify-offline-packager keygen \
+              --profile "$PROFILE" \
+              --platform "$PLATFORM" \
+              --output-dir "$key_dir"
+          fi
+
+          {
+            echo "private_key=$private_key"
+            echo "public_key=$public_key"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build, sign, and verify offline
+        shell: bash
+        env:
+          PROFILE: ${{ inputs.profile }}
+          PLATFORM: ${{ steps.workspace.outputs.platform }}
+          SOURCE_PATH: ${{ steps.workspace.outputs.source_path }}
+          OUTPUT_PATH: ${{ steps.workspace.outputs.output_path }}
+          PRIVATE_KEY: ${{ steps.signing.outputs.private_key }}
+          PUBLIC_KEY: ${{ steps.signing.outputs.public_key }}
+          PUBLIC_INDEX_URL: ${{ inputs.index_url }}
+          SECRET_INDEX_URL: ${{ secrets.DIFY_PYPI_INDEX_URL }}
+        run: |
+          set -Eeuo pipefail
+          index_url="$PUBLIC_INDEX_URL"
+          if [[ -n "$SECRET_INDEX_URL" ]]; then
+            index_url="$SECRET_INDEX_URL"
+          fi
+          if [[ "$index_url" != https://* ]]; then
+            echo "The Python package index URL must use HTTPS." >&2
+            exit 1
+          fi
+
+          ./dify-offline-packager pack "$SOURCE_PATH" \
+            --output "$OUTPUT_PATH" \
+            --profile "$PROFILE" \
+            --platform "$PLATFORM" \
+            --index-url "$index_url" \
+            --private-key "$PRIVATE_KEY" \
+            --public-key "$PUBLIC_KEY"
+
+      - name: Prepare downloadable artifact
+        id: artifact
+        shell: bash
+        env:
+          WORK_ROOT: ${{ steps.workspace.outputs.work_root }}
+          OUTPUT_PATH: ${{ steps.workspace.outputs.output_path }}
+          PUBLIC_KEY: ${{ steps.signing.outputs.public_key }}
+          PROFILE: ${{ inputs.profile }}
+          PLATFORM: ${{ steps.workspace.outputs.platform }}
+          SIGNING_MODE: ${{ inputs.signing_mode }}
+        run: |
+          set -Eeuo pipefail
+          dist="$WORK_ROOT/dist"
+          package_name="$(basename "$OUTPUT_PATH")"
+          report_name="${package_name}.report.json"
+          cp "$PUBLIC_KEY" "$dist/offline-packager.public.pem"
+
+          (
+            cd "$dist"
+            sha256sum \
+              "$package_name" \
+              "$report_name" \
+              offline-packager.public.pem > SHA256SUMS
+          )
+
+          {
+            printf '%s\n' \
+              '# Next steps' \
+              '' \
+              "- Target: $PROFILE / $PLATFORM" \
+              "- Signing mode: $SIGNING_MODE"
+            printf -- '- Upload %s to Dify, not the original source package.\n' "$package_name"
+            printf '%s\n' \
+              '- Configure Dify to trust offline-packager.public.pem before installation.' \
+              '- Review the JSON report and verify files with sha256sum -c SHA256SUMS.' \
+              '- Never copy a private signing key to the Dify server.'
+          } > "$dist/NEXT_STEPS.md"
+
+          package_sha256="$(sha256sum "$OUTPUT_PATH" | cut -d ' ' -f 1)"
+          dependency_count="$(jq -r '.dependency_count' "$dist/$report_name")"
+          {
+            echo '## Offline package completed'
+            echo
+            printf -- '- Package: %s\n' "$package_name"
+            printf -- '- Target: %s / %s\n' "$PROFILE" "$PLATFORM"
+            printf -- '- Dependencies: %s\n' "$dependency_count"
+            printf -- '- Package SHA-256: %s\n' "$package_sha256"
+            echo '- Offline verification: passed'
+            echo
+            echo 'Download the workflow artifact. It contains the package, audit report, public key, checksums, and next-step instructions.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove private signing key
+        if: ${{ always() }}
+        shell: bash
+        env:
+          WORK_ROOT: ${{ steps.workspace.outputs.work_root }}
+        run: |
+          set -Eeuo pipefail
+          if [[ -n "$WORK_ROOT" && -d "$WORK_ROOT/keys" ]]; then
+            find "$WORK_ROOT/keys" -type f -name '*.private.pem' -delete
+          fi
+
+      - name: Upload offline package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dify-offline-${{ inputs.profile }}-${{ inputs.architecture }}-${{ github.run_number }}
+          path: ${{ steps.workspace.outputs.work_root }}/dist/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7

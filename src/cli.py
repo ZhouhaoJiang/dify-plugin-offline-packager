@@ -18,8 +18,9 @@ from profiles import ProfileError, RuntimeSelection, load_catalog, select_runtim
 
 
 ROOT = Path(__file__).resolve().parent.parent
+WORKER_SOURCE = ROOT / "src"
 CATALOG = load_catalog()
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 
 
 class CliError(RuntimeError):
@@ -376,7 +377,7 @@ def pack(args: argparse.Namespace) -> None:
         command.extend(
             [
                 "--volume",
-                volume(ROOT, "/tool", read_only=True),
+                volume(WORKER_SOURCE, "/tool/src", read_only=True),
                 "--volume",
                 volume(work, "/work"),
                 "--env",
@@ -421,7 +422,7 @@ def pack(args: argparse.Namespace) -> None:
         verify_command.extend(
             [
                 "--volume",
-                volume(ROOT, "/tool", read_only=True),
+                volume(WORKER_SOURCE, "/tool/src", read_only=True),
                 "--volume",
                 volume(work, "/work"),
                 "--entrypoint",
