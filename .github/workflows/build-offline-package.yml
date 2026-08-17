@@ -246,10 +246,10 @@ jobs:
               '' \
               "- Target: $PROFILE / $PLATFORM" \
               "- Signing mode: $SIGNING_MODE"
-            printf -- '- Upload `%s` to Dify, not the original source package.\n' "$package_name"
+            printf -- '- Upload %s to Dify, not the original source package.\n' "$package_name"
             printf '%s\n' \
-              '- Configure Dify to trust `offline-packager.public.pem` before installation.' \
-              '- Review the JSON report and verify files with `sha256sum -c SHA256SUMS`.' \
+              '- Configure Dify to trust offline-packager.public.pem before installation.' \
+              '- Review the JSON report and verify files with sha256sum -c SHA256SUMS.' \
               '- Never copy a private signing key to the Dify server.'
           } > "$dist/NEXT_STEPS.md"
 
@@ -258,11 +258,11 @@ jobs:
           {
             echo '## Offline package completed'
             echo
-            printf -- '- Package: `%s`\n' "$package_name"
-            printf -- '- Target: `%s / %s`\n' "$PROFILE" "$PLATFORM"
-            printf -- '- Dependencies: `%s`\n' "$dependency_count"
-            printf -- '- Package SHA-256: `%s`\n' "$package_sha256"
-            echo '- Offline verification: `passed`'
+            printf -- '- Package: %s\n' "$package_name"
+            printf -- '- Target: %s / %s\n' "$PROFILE" "$PLATFORM"
+            printf -- '- Dependencies: %s\n' "$dependency_count"
+            printf -- '- Package SHA-256: %s\n' "$package_sha256"
+            echo '- Offline verification: passed'
             echo
             echo 'Download the workflow artifact. It contains the package, audit report, public key, checksums, and next-step instructions.'
           } >> "$GITHUB_STEP_SUMMARY"
