@@ -1,120 +1,156 @@
 # Dify Plugin Offline Packager
 
-面向 Dify Enterprise Docker Compose 3.12.0 的 Python 插件离线打包工具。它不会依赖宿主机 Python 的 ABI，也不会用单一 `pip --platform` 猜测 Linux wheel 标签。
+[![CI](https://github.com/ZhouhaoJiang/dify-plugin-offline-packager/actions/workflows/ci.yml/badge.svg)](https://github.com/ZhouhaoJiang/dify-plugin-offline-packager/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-## 它解决什么问题
+面向隔离网络部署的 Dify Python 插件重打包工具。它按 Dify 版本选择目标 plugin daemon 镜像，在目标 Linux/Python/CPU 运行时中构建依赖，完成断网安装验证，并生成可审计报告。
 
-Dify 3.12.0 的 plugin daemon 在插件同时包含 `pyproject.toml` 和 `uv.lock` 时会执行：
+这是独立社区项目，不是 Dify 官方发行物。重打包会改变原 Marketplace 包，部署方需要对新的依赖供应链和组织签名负责。
 
-```text
-uv sync --no-dev --frozen
-```
+## 支持范围
 
-因此，只往包里加入 `wheels/` 并在 `pyproject.toml` 写 `no-index` 并不充分：原锁文件仍可能含远端 URL，`--frozen` 也不会重写它。
+| Profile | Dify 部署 | linux/amd64 | linux/arm64 |
+| --- | --- | --- | --- |
+| `enterprise-3.9.2` | Enterprise Compose 3.9.2 | 已完成集成验证 | 未验证 |
+| `enterprise-3.12.0` | Enterprise Compose 3.12.0 | 已完成集成验证 | 未验证 |
 
-实现依据为 Dify 3.12.0 对应的 plugin daemon 源码：Python 运行时固定为 3.12（[local.dockerfile](https://github.com/langgenius/dify-plugin-daemon/blob/eff6e1eef304cbeb43de2df82ee575bde0a957e6/docker/local.dockerfile#L25-L50)），依赖文件选择和 `uv sync` / `uv pip install` 参数位于 [setup_python_environment.go](https://github.com/langgenius/dify-plugin-daemon/blob/eff6e1eef304cbeb43de2df82ee575bde0a957e6/internal/core/local_runtime/setup_python_environment.go#L73-L195)。上游曾加入全局 `uv sync --offline`，随后因破坏正常 Marketplace 安装而回退，见 [PR #651](https://github.com/langgenius/dify-plugin-daemon/pull/651)。
+完整证据边界、旧版本差异和新增版本准入规则见 [兼容性与验证矩阵](docs/compatibility.md)。未列出的版本不应按“应该兼容”处理。
 
-本工具采用另一条经过 3.12.0 daemon 支持的路径：
+## 为什么按 Dify 版本管理
 
-1. 在与目标环境相同的 plugin daemon 镜像和 CPU 架构中原生构建全部 wheels；
-2. 生成只引用 `./wheels` 的完全固定版本 `requirements.txt`；
-3. 从输出包中移除 `pyproject.toml` 和 `uv.lock`，使 daemon 明确选择 `uv pip install -r requirements.txt`；
-4. 用同一镜像、`--network none` 再安装一次，断网验证通过后才输出包；
-5. 生成包含镜像 ID、依赖清单和 SHA-256 的审计报告。
+离线包是否可用取决于一整组运行时身份：
 
-当前范围：Dify Enterprise Docker Compose 3.12.0、Python 3.12 插件、`linux/amd64` 与 `linux/arm64`。本仓库的工单验收样例已覆盖 `linux/amd64`；发布 arm64 包时仍应在对应架构上独立执行完整命令并保留报告。
+- Dify/plugin daemon 版本；
+- Python ABI；
+- Linux CPU 架构；
+- uv 与 daemon 的依赖安装分支；
+- Dify 打包和签名 CLI。
+
+因此，本项目不提交 `darwin-amd64`、`darwin-arm64`、`linux-amd64`、`linux-arm64` 四个宿主机预编译二进制。它直接使用目标 daemon 镜像中随版本交付的 `/app/commandline`，并在执行前核对 Python、uv、CPU 架构和 CLI SHA-256。详细设计见 [设计与信任边界](docs/architecture.md)。
+
+## 工作原理
+
+当插件同时包含 `pyproject.toml` 与 `uv.lock` 时，部分 daemon 版本会选择 `uv sync --frozen`。原锁文件仍可能含远端 URL，所以仅加入 `wheels/` 或在 `pyproject.toml` 中声明 `no-index` 不能构成离线保证。
+
+本工具会：
+
+1. 在目标 daemon 镜像和 CPU 架构中原生构建所有 wheels；
+2. 生成只引用 `./wheels` 的固定版本 `requirements.txt`；
+3. 从输出包移除 `pyproject.toml` 和 `uv.lock`，明确选择 requirements 安装路径；
+4. 使用目标版本内置 Dify CLI 打包和可选签名；
+5. 在 `--network none` 容器中重新安装依赖，成功后才发布产物；
+6. 记录输入输出 SHA-256、镜像 ID/digest、CLI 哈希、Python、uv 和依赖清单。
 
 ## 前置条件
 
-- Docker；
-- 已能访问依赖源的打包机；
-- 目标部署使用的 `langgenius/dify-ee-plugin-daemon-local:3.12.0` 镜像。若镜像使用私有仓库地址，通过 `--image` 传入实际地址。
+- Docker Engine 或 Docker Desktop；
+- 打包阶段可以访问所选 Python 包索引；
+- 能拉取目标 Dify plugin daemon 镜像；
+- 输入为 Python 插件 `.difypkg`。
 
-打包机可以是 Apple Silicon。`--platform linux/amd64` 会让依赖在目标 Linux x86_64 容器中解析和构建。
+宿主机可以是 macOS。`--platform linux/amd64` 或 `linux/arm64` 决定真正构建 wheel 的目标容器架构。
 
-## 快速使用
+## 快速开始
 
-先生成本组织自己的插件签名密钥：
+先查看仓库声明的版本，而不是默认猜测：
+
+```bash
+./dify-offline-packager profiles
+```
+
+所有会运行容器的命令都要求显式传入 `--profile`；工具不会静默选择某个 Dify 版本。
+
+检查目标镜像的实际能力：
+
+```bash
+./dify-offline-packager doctor \
+  --profile enterprise-3.12.0 \
+  --platform linux/amd64
+```
+
+生成本组织自己的测试/生产签名密钥：
 
 ```bash
 ./dify-offline-packager keygen \
+  --profile enterprise-3.12.0 \
   --platform linux/amd64 \
   --output-dir ./keys
 ```
 
-私钥只保留在受控的打包环境，不能复制到 Dify 服务器。服务器只需要公钥。
+私钥只保留在受控打包环境。Dify 服务器只需要公钥。
 
-打包 Marketplace 下载的插件：
-
-```bash
-./dify-offline-packager pack ./openai_api_compatible_0.0.59.difypkg \
-  --platform linux/amd64 \
-  --index-url https://mirrors.cloud.tencent.com/pypi/simple \
-  --private-key ./keys/offline-packager.private.pem \
-  --public-key ./keys/offline-packager.public.pem
-```
-
-如果部署镜像来自私有镜像仓库：
+打包并完成断网验证：
 
 ```bash
 ./dify-offline-packager pack ./plugin.difypkg \
+  --profile enterprise-3.12.0 \
   --platform linux/amd64 \
-  --image registry.example.com/dify-ee-plugin-daemon-local:3.12.0 \
+  --index-url https://pypi.org/simple \
   --private-key ./keys/offline-packager.private.pem \
   --public-key ./keys/offline-packager.public.pem
 ```
 
 成功后产生：
 
-- `*-offline-linux-amd64.difypkg`：离线插件包；
-- `*.difypkg.report.json`：输入/输出 SHA-256、精确镜像身份、固定依赖清单、断网验证结果。
+- `*-offline-linux-amd64.difypkg`：输出插件包；
+- `*.difypkg.report.json`：运行时身份、依赖、签名状态和断网验证结果。
 
-命令只有在 `--network none` 的二次安装成功后才返回成功。
+命令只有在无网络二次安装成功后才返回成功。
 
-## 在 Dify 3.12.0 中信任组织公钥
+## 私有镜像仓库
 
-推荐保留 `FORCE_VERIFYING_SIGNATURE=true`，为 plugin daemon 挂载公钥并开启第三方签名校验。仓库提供了 [deploy/docker-compose.third-party-signatures.yaml](deploy/docker-compose.third-party-signatures.yaml) 示例：
+如果客户镜像来自内部仓库，仍需选择语义匹配的 profile，再覆盖镜像地址：
 
 ```bash
-mkdir -p ./keys
-cp /安全传输路径/offline-packager.public.pem ./keys/
-docker compose \
-  -f docker-compose.yaml \
-  -f /path/to/docker-compose.third-party-signatures.yaml \
-  up -d plugin_daemon
+./dify-offline-packager doctor \
+  --profile enterprise-3.9.2 \
+  --platform linux/amd64 \
+  --runtime-image registry.example.com/dify-ee-plugin-daemon-local:3.9.2
 ```
 
-请先用 `docker compose ... config` 检查合并结果。不要把私钥挂载到服务器或提交到 Git。
+覆盖后报告会把 profile 标记为 `custom-runtime-not-validated`。实时自检通过只说明基础组件匹配，不继承内置镜像的集成验证结论。
 
-若不传 `--private-key`，工具仍可生成并断网验证 unsigned 包，但 Dify 3.12.0 默认会拒绝它。将 `FORCE_VERIFYING_SIGNATURE=false` 会扩大所有插件的信任面，仅适合已有隔离控制的临时环境，不作为推荐方案。
+## 独立复核
 
-## 独立验证
-
-重复断网安装测试：
+重复断网安装：
 
 ```bash
 ./dify-offline-packager verify ./plugin-offline-linux-amd64.difypkg \
+  --profile enterprise-3.12.0 \
   --platform linux/amd64
 ```
 
-验证第三方签名：
+复核第三方签名：
 
 ```bash
 ./dify-offline-packager verify-signature ./plugin-offline-linux-amd64.difypkg \
+  --profile enterprise-3.12.0 \
   --platform linux/amd64 \
   --public-key ./keys/offline-packager.public.pem
 ```
 
+仓库中的 [Compose override 示例](deploy/docker-compose.third-party-signatures.yaml) 展示了公钥挂载方式。应用前必须与目标 Dify 版本的环境变量逐项核对，并先运行 `docker compose ... config` 检查合并结果。不要把私钥挂载到 Dify 服务器。
+
 ## 安全边界
 
-- 重打包会改变原 Marketplace 包，原官方签名不再有效；输出包必须按本组织供应链重新签名。
-- 构建 Python sdist 时，第三方构建脚本会在受限 Docker 容器中执行。容器不挂载 Docker socket、用户主目录、签名密钥或其他项目目录，但构建阶段需要网络访问依赖源。
-- 私钥仅挂载到 `--network none` 的独立签名容器；签名完成后会立即使用所给公钥验签。
-- 离线验证证明依赖安装不访问网络，不等于插件业务功能验证或依赖安全审计。
-- 默认包大小上限为 50 MB，与 3.12.0 Compose 默认 `PLUGIN_MAX_PACKAGE_SIZE` 一致。调整 `--max-size-mb` 时必须同步评估服务器限制。
+- 构建 Python sdist 会执行第三方构建代码；请使用专用 worker，且不要挂载 Docker socket、宿主机主目录或无关凭据。
+- 私钥只挂载到 `--network none` 的独立签名容器，随后立即公钥验签。
+- 断网安装不等于插件业务验证，也不等于依赖漏洞扫描。
+- 默认解压后大小上限为 50 MB。修改 `--max-size-mb` 前需确认目标 Dify 的包大小限制。
+- 不传签名密钥可生成 unsigned 包，但开启强制签名校验的 Dify 会拒绝它。不要为了安装一个包而全局关闭签名校验。
 
-## 测试
+安全问题请按 [Security Policy](SECURITY.md) 私密报告。
+
+## 开发
 
 ```bash
 python3 -m unittest discover -s tests -v
+ruff check src tests
+ruff format --check src tests
 ```
+
+版本配置位于 [`config/runtime-profiles.json`](config/runtime-profiles.json)。新增版本必须遵循 [兼容性准入门槛](docs/compatibility.md#新增版本的准入门槛)，不能只复制一个镜像 tag。
+
+## License
+
+Apache License 2.0。Dify 名称及相关商标归其权利人所有。

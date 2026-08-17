@@ -16,9 +16,9 @@ import sys
 import zipfile
 
 
-PYTHON = "python3.12"
-UV = "uv"
-PACKAGE_CLI = "/app/commandline"
+DEFAULT_PYTHON = "python3"
+DEFAULT_UV = "uv"
+DEFAULT_PACKAGE_CLI = "/app/commandline"
 ONLINE_REQUIREMENT_OPTIONS = (
     "--index-url",
     "--extra-index-url",
@@ -58,6 +58,7 @@ def sha256_file(path: Path) -> str:
 def safe_extract(package: Path, destination: Path, max_uncompressed_bytes: int) -> None:
     destination.mkdir(parents=True, exist_ok=True)
     total = 0
+    seen_paths: set[str] = set()
     with zipfile.ZipFile(package) as archive:
         members = archive.infolist()
         if len(members) > 100_000:
@@ -69,6 +70,10 @@ def safe_extract(package: Path, destination: Path, max_uncompressed_bytes: int) 
             relative = PurePosixPath(member.filename)
             if relative.is_absolute() or ".." in relative.parts:
                 raise PackagerError(f"unsafe archive path: {member.filename!r}")
+            normalized = str(relative)
+            if normalized in {"", "."} or normalized in seen_paths:
+                raise PackagerError(f"duplicate or empty archive path: {member.filename!r}")
+            seen_paths.add(normalized)
 
             mode = (member.external_attr >> 16) & 0xFFFF
             if stat.S_ISLNK(mode):
@@ -113,16 +118,33 @@ def clean_staging(staging: Path) -> None:
         bytecode.unlink()
 
 
-def validate_python_plugin(staging: Path) -> None:
+def manifest_python_version(staging: Path) -> str:
     manifest = staging / "manifest.yaml"
     if not manifest.is_file():
         raise PackagerError("manifest.yaml is missing")
     text = manifest.read_text(encoding="utf-8")
     runner = re.search(r"runner:\s*(.*?)(?:\n\S|\Z)", text, flags=re.DOTALL)
-    if not runner or not re.search(r"language:\s*['\"]?python['\"]?", runner.group(1)):
+    if not runner or not re.search(
+        r"(?m)^\s*language:\s*['\"]?python['\"]?\s*(?:#.*)?$",
+        runner.group(1),
+    ):
         raise PackagerError("only Python plugins are supported")
-    if not re.search(r"version:\s*['\"]?3\.12(?:\.[0-9]+)?['\"]?", runner.group(1)):
-        raise PackagerError("the selected Dify 3.12 runtime requires a Python 3.12 plugin")
+    version = re.search(
+        r"(?m)^\s*version:\s*['\"]?([0-9]+\.[0-9]+)(?:\.[0-9]+)?['\"]?\s*(?:#.*)?$",
+        runner.group(1),
+    )
+    if not version:
+        raise PackagerError("the Python runner version is missing or invalid")
+    return version.group(1)
+
+
+def validate_python_plugin(staging: Path, runtime_python_version: str) -> None:
+    plugin_python_version = manifest_python_version(staging)
+    if plugin_python_version != runtime_python_version:
+        raise PackagerError(
+            f"plugin requires Python {plugin_python_version}, but the selected runtime uses "
+            f"Python {runtime_python_version}"
+        )
 
 
 def strip_online_requirement_options(content: str) -> str:
@@ -151,7 +173,7 @@ def strip_online_requirement_options(content: str) -> str:
     return "\n".join(result).strip() + "\n"
 
 
-def prepare_build_requirements(staging: Path) -> Path:
+def prepare_build_requirements(staging: Path, *, python: str, uv: str) -> Path:
     output = staging / ".offline-build-requirements.txt"
     requirements = staging / "requirements.txt"
     pyproject = staging / "pyproject.toml"
@@ -168,7 +190,7 @@ def prepare_build_requirements(staging: Path) -> Path:
 
     run(
         [
-            UV,
+            uv,
             "export",
             "--no-config",
             "--no-dev",
@@ -176,7 +198,7 @@ def prepare_build_requirements(staging: Path) -> Path:
             "--no-emit-project",
             "--no-editable",
             "--python",
-            PYTHON,
+            python,
             "--output-file",
             output.name,
         ],
@@ -200,8 +222,7 @@ def wheel_pins(wheel_directory: Path) -> list[str]:
             metadata_names = [
                 name
                 for name in archive.namelist()
-                if name.endswith(".dist-info/METADATA")
-                and len(PurePosixPath(name).parts) == 2
+                if name.endswith(".dist-info/METADATA") and len(PurePosixPath(name).parts) == 2
             ]
             if len(metadata_names) != 1:
                 raise PackagerError(f"cannot identify wheel metadata: {wheel.name}")
@@ -263,15 +284,20 @@ def build(args: argparse.Namespace) -> None:
     log("extracting and validating the source package")
     safe_extract(source, staging, args.max_size_mb * 1024 * 1024)
     clean_staging(staging)
-    validate_python_plugin(staging)
+    runtime_python_version = f"{sys.version_info.major}.{sys.version_info.minor}"
+    validate_python_plugin(staging, runtime_python_version)
 
-    build_requirements = prepare_build_requirements(staging)
+    build_requirements = prepare_build_requirements(
+        staging,
+        python=args.python,
+        uv=args.uv,
+    )
     wheels = staging / "wheels"
     wheels.mkdir()
     log("building dependency wheels inside the target runtime")
     run(
         [
-            PYTHON,
+            args.python,
             "-m",
             "pip",
             "wheel",
@@ -301,10 +327,10 @@ def build(args: argparse.Namespace) -> None:
 
     if output.exists():
         output.unlink()
-    log("packaging with the Dify 3.12 command-line packager")
+    log("packaging with the Dify command-line packager from the target runtime")
     run(
         [
-            PACKAGE_CLI,
+            args.package_cli,
             "plugin",
             "package",
             str(staging),
@@ -320,8 +346,10 @@ def build(args: argparse.Namespace) -> None:
         "source_sha256": sha256_file(source),
         "package_sha256": sha256_file(output),
         "package_size_bytes": output.stat().st_size,
-        "python": capture([PYTHON, "--version"]),
-        "uv": capture([UV, "--version"]),
+        "python": capture([args.python, "--version"]),
+        "uv": capture([args.uv, "--version"]),
+        "package_cli": args.package_cli,
+        "package_cli_sha256": sha256_file(Path(args.package_cli)),
         "dependency_count": len(pins),
         "dependencies": pins,
         "signed": False,
@@ -346,8 +374,11 @@ def verify(args: argparse.Namespace) -> None:
     if "--no-index" not in requirements or "--find-links=./wheels" not in requirements:
         raise PackagerError("requirements.txt does not enforce local wheel installation")
 
-    run([UV, "venv", "--clear", ".venv", "--python", "3.12"], cwd=staging)
-    run([UV, "pip", "install", "--link-mode=copy", "-r", "requirements.txt"], cwd=staging)
+    run([args.uv, "venv", "--clear", ".venv", "--python", args.python], cwd=staging)
+    run(
+        [args.uv, "pip", "install", "--link-mode=copy", "-r", "requirements.txt"],
+        cwd=staging,
+    )
     run(
         [
             str(staging / ".venv/bin/python"),
@@ -378,6 +409,7 @@ def parser() -> argparse.ArgumentParser:
     build_parser.add_argument("--workdir", required=True)
     build_parser.add_argument("--report", required=True)
     build_parser.add_argument("--max-size-mb", type=int, default=50)
+    add_runtime_options(build_parser)
     build_parser.set_defaults(handler=build)
 
     verify_parser = subcommands.add_parser("verify")
@@ -385,8 +417,15 @@ def parser() -> argparse.ArgumentParser:
     verify_parser.add_argument("--workdir", required=True)
     verify_parser.add_argument("--report", required=True)
     verify_parser.add_argument("--max-size-mb", type=int, default=50)
+    add_runtime_options(verify_parser)
     verify_parser.set_defaults(handler=verify)
     return root
+
+
+def add_runtime_options(command: argparse.ArgumentParser) -> None:
+    command.add_argument("--python", default=DEFAULT_PYTHON)
+    command.add_argument("--uv", default=DEFAULT_UV)
+    command.add_argument("--package-cli", default=DEFAULT_PACKAGE_CLI)
 
 
 def main() -> int:
