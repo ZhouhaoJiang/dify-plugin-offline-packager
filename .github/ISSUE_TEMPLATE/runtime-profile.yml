@@ -1,0 +1,45 @@
+name: Runtime profile request
+description: Propose support for another Dify release
+title: "[Profile] "
+labels:
+  - runtime-profile
+body:
+  - type: input
+    id: deployment
+    attributes:
+      label: Exact Dify edition, deployment method, and version
+      placeholder: Dify Enterprise Docker Compose 3.x.y
+    validations:
+      required: true
+  - type: input
+    id: image
+    attributes:
+      label: Exact plugin daemon image reference
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Target platform
+      options:
+        - linux/amd64
+        - linux/arm64
+        - Both
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Release configuration and source evidence
+      description: Link the official Compose or Helm release and matching daemon source when available.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Validation commitment
+      options:
+        - label: I understand that an image tag alone is not sufficient for a supported profile.
+          required: true
+        - label: I can provide sanitized end-to-end validation evidence.
+          required: true

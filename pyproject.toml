@@ -1,8 +1,11 @@
 [project]
 name = "dify-plugin-offline-packager"
-version = "0.1.0"
-description = "Build and verify Dify 3.12 Python plugins for offline installation"
+version = "0.2.0"
+description = "Build and verify Python plugin packages for versioned Dify offline runtimes"
+readme = "README.md"
 requires-python = ">=3.10"
+license = "Apache-2.0"
 
 [tool.ruff]
 line-length = 100
+target-version = "py310"

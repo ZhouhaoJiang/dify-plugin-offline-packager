@@ -13,6 +13,16 @@ import container_worker as worker  # noqa: E402
 
 
 class SafeExtractTest(unittest.TestCase):
+    def test_rejects_duplicate_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            package = root / "duplicate.difypkg"
+            with zipfile.ZipFile(package, "w") as archive:
+                archive.writestr("manifest.yaml", "first")
+                archive.writestr("./manifest.yaml", "second")
+            with self.assertRaises(worker.PackagerError):
+                worker.safe_extract(package, root / "output", 1024)
+
     def test_rejects_parent_traversal(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -45,6 +55,37 @@ requests==2.34.2
         )
 
 
+class ManifestTest(unittest.TestCase):
+    def test_accepts_runtime_matching_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "manifest.yaml").write_text(
+                "meta:\n  runner:\n    language: python\n    version: '3.12'\n",
+                encoding="utf-8",
+            )
+            worker.validate_python_plugin(root, "3.12")
+
+    def test_rejects_runtime_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "manifest.yaml").write_text(
+                "meta:\n  runner:\n    language: python\n    version: '3.11'\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(worker.PackagerError):
+                worker.validate_python_plugin(root, "3.12")
+
+    def test_rejects_non_python_runner(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "manifest.yaml").write_text(
+                "meta:\n  runner:\n    language: python3\n    version: '3.12'\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(worker.PackagerError):
+                worker.validate_python_plugin(root, "3.12")
+
+
 class WheelMetadataTest(unittest.TestCase):
     def test_builds_sorted_pins(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -72,7 +113,9 @@ class WheelMetadataTest(unittest.TestCase):
     def _wheel(path: Path, name: str, version: str) -> None:
         metadata = f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n\n"
         with zipfile.ZipFile(path, "w") as archive:
-            archive.writestr(f"{name}-{version}.dist-info/METADATA", io.BytesIO(metadata.encode()).getvalue())
+            archive.writestr(
+                f"{name}-{version}.dist-info/METADATA", io.BytesIO(metadata.encode()).getvalue()
+            )
 
 
 if __name__ == "__main__":
