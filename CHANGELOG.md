@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The project follows Sem
 
 ## [Unreleased]
 
+### Changed
+
+- Name each GitHub Actions Artifact after its generated offline package instead of the runtime profile and workflow run number.
+
 ## [0.4.0] - 2026-08-17
 
 ### Added

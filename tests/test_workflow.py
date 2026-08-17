@@ -31,6 +31,16 @@ class PackagingWorkflowTest(unittest.TestCase):
         self.assertNotIn("private.pem", upload_step)
         self.assertIn("/dist/", upload_step)
 
+    def test_artifact_name_matches_generated_package(self) -> None:
+        self.assertIn(
+            'artifact_name="${output_stem}-offline-linux-${INPUT_ARCHITECTURE}"',
+            self.content,
+        )
+        self.assertIn('echo "artifact_name=$artifact_name"', self.content)
+        upload_step = self.content.split("- name: Upload offline package", maxsplit=1)[1]
+        self.assertIn("name: ${{ steps.workspace.outputs.artifact_name }}", upload_step)
+        self.assertNotIn("github.run_number", upload_step)
+
 
 if __name__ == "__main__":
     unittest.main()
