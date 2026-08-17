@@ -61,6 +61,8 @@ def docker_security_args(platform: str, network: str) -> list[str]:
         network,
         "--cap-drop=ALL",
         "--security-opt=no-new-privileges",
+        "--user",
+        f"{os.getuid()}:{os.getgid()}",
         "--env",
         "HOME=/work/home",
         "--env",
