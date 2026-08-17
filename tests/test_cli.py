@@ -25,6 +25,11 @@ class CliTest(unittest.TestCase):
         self.assertEqual(cli.WORKER_SOURCE, cli.ROOT / "src")
         self.assertNotEqual(cli.WORKER_SOURCE, cli.ROOT)
 
+    def test_containers_use_the_host_user_for_bind_mounts(self) -> None:
+        arguments = cli.docker_security_args("linux/amd64", "none")
+        user_index = arguments.index("--user")
+        self.assertEqual(arguments[user_index + 1], f"{cli.os.getuid()}:{cli.os.getgid()}")
+
     def test_runtime_errors_rejects_python_mismatch(self) -> None:
         selection = cli.select_runtime(cli.CATALOG, "dify-compose-3.12.0")
         probe = {

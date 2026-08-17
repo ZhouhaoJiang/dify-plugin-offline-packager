@@ -16,6 +16,7 @@ All notable changes to this project are documented here. The project follows Sem
 ### Security
 
 - Limit the source mounted into build and verification containers to `src/`, preventing repository-level keys and checkout metadata from becoming readable inside the plugin build container.
+- Run containers with the host runner UID/GID so protected bind mounts work consistently without making key directories globally writable.
 
 ## [0.3.0] - 2026-08-17
 

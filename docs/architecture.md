@@ -34,7 +34,7 @@
 6. 如需签名，在不联网且只挂载私钥的独立容器中签名，随后立即使用公钥验签；
 7. 在 `--network none` 容器中重新创建虚拟环境并安装，成功后才发布输出。
 
-构建和复验容器只读挂载仓库的 `src/`，不会挂载 `.git/`、仓库级 `keys/` 或其他 checkout 内容。GitHub Actions 的输入包、密钥和输出均位于 runner 临时目录；私钥在 Artifact 上传前删除，上传范围只包含 `dist/`。
+构建和复验容器只读挂载仓库的 `src/`，不会挂载 `.git/`、仓库级 `keys/` 或其他 checkout 内容。容器使用宿主 runner 的 UID/GID 访问绑定目录，同时移除 Linux capabilities 并启用 `no-new-privileges`，避免依赖容器内 root 对不同 Docker 实现的权限映射。GitHub Actions 的输入包、密钥和输出均位于 runner 临时目录；私钥在 Artifact 上传前删除，上传范围只包含 `dist/`。
 
 ## 证明范围
 
