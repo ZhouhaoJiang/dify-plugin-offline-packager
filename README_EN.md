@@ -90,7 +90,7 @@ If the source is reachable only from an isolated network, use the local CLI or a
 | Input | Value |
 | --- | --- |
 | `package_url` | Public HTTPS URL; leave empty when using the `DIFY_PLUGIN_PACKAGE_URL` secret |
-| `package_filename` | Output label such as `langgenius-openai_api_compatible_0.0.59.difypkg`; it does not upload a local file |
+| `package_filename` | Names both the offline package and Artifact; for example, `langgenius-openai_api_compatible_0.0.59.difypkg` produces the `langgenius-openai_api_compatible_0.0.59-offline-linux-amd64` Artifact. It does not upload a local file |
 | `package_sha256` | Full 64-character SHA-256 of the source; a mismatch stops the run |
 | `profile` | Must match the target Dify deployment version |
 | `architecture` | Linux CPU architecture of plugin daemon, not the browser or local computer |
@@ -120,7 +120,7 @@ Then select `repository-secrets`. The Action never uploads the private key; it i
 
 ### 4. Download and deploy the result
 
-After a successful run, download the `dify-offline-*` item under **Artifacts**. It contains:
+After a successful run, download the **Artifacts** item named after the offline package without the `.difypkg` suffix, for example `langgenius-openai_api_compatible_0.0.59-offline-linux-amd64`. It contains:
 
 - `*-offline-linux-*.difypkg`: the offline plugin package to upload to Dify;
 - `*.difypkg.report.json`: runtime identity, dependency, signing, and no-network evidence;

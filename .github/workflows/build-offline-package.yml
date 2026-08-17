@@ -107,7 +107,8 @@ jobs:
           mkdir -p "$work_root/input" "$work_root/dist" "$work_root/keys"
           source_path="$work_root/input/$INPUT_PACKAGE_FILENAME"
           output_stem="${INPUT_PACKAGE_FILENAME%.difypkg}"
-          output_path="$work_root/dist/${output_stem}-offline-linux-${INPUT_ARCHITECTURE}.difypkg"
+          artifact_name="${output_stem}-offline-linux-${INPUT_ARCHITECTURE}"
+          output_path="$work_root/dist/${artifact_name}.difypkg"
 
           curl \
             --proto '=https' \
@@ -135,6 +136,7 @@ jobs:
             echo "work_root=$work_root"
             echo "source_path=$source_path"
             echo "output_path=$output_path"
+            echo "artifact_name=$artifact_name"
             echo "platform=linux/$INPUT_ARCHITECTURE"
           } >> "$GITHUB_OUTPUT"
 
@@ -281,7 +283,7 @@ jobs:
       - name: Upload offline package
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: dify-offline-${{ inputs.profile }}-${{ inputs.architecture }}-${{ github.run_number }}
+          name: ${{ steps.workspace.outputs.artifact_name }}
           path: ${{ steps.workspace.outputs.work_root }}/dist/
           if-no-files-found: error
           compression-level: 0

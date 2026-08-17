@@ -90,7 +90,7 @@ printf '%s' 'https://storage.example.com/private/plugin.difypkg?...' \
 | 参数 | 填写方式 |
 | --- | --- |
 | `package_url` | 公开 HTTPS 地址；使用 `DIFY_PLUGIN_PACKAGE_URL` Secret 时留空 |
-| `package_filename` | 仅用于产物命名，例如 `langgenius-openai_api_compatible_0.0.59.difypkg`；它不会上传本地文件 |
+| `package_filename` | 用于离线包和 Artifact 命名，例如输入 `langgenius-openai_api_compatible_0.0.59.difypkg` 会生成 `langgenius-openai_api_compatible_0.0.59-offline-linux-amd64` Artifact；它不会上传本地文件 |
 | `package_sha256` | 输入源包的完整 64 位 SHA-256，下载后不一致会立即失败 |
 | `profile` | 必须与目标 Dify 部署版本一致 |
 | `architecture` | plugin daemon 的 Linux CPU 架构，不是浏览器或本机架构 |
@@ -120,7 +120,7 @@ base64 < ../dify-offline-packager-keys/offline-packager.public.pem \
 
 ### 4. 下载和部署产物
 
-成功后，从该次 run 的 **Artifacts** 下载 `dify-offline-*`。压缩包包含：
+成功后，从该次 run 的 **Artifacts** 下载与离线包同名（不含 `.difypkg`）的项目，例如 `langgenius-openai_api_compatible_0.0.59-offline-linux-amd64`。压缩包包含：
 
 - `*-offline-linux-*.difypkg`：应上传到 Dify 的离线插件包；
 - `*.difypkg.report.json`：运行时身份、依赖、签名和断网复验证据；
