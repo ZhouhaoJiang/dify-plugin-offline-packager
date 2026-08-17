@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The project follows Sem
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-17
+
+### Added
+
+- Fork-friendly `Build offline package` manual GitHub Actions workflow.
+- Public URL and repository-secret source download modes with mandatory SHA-256 verification.
+- Ephemeral and reusable organization signing-key modes; artifacts contain only the public key.
+- Bilingual GitHub Actions tutorials, workflow security tests, and checksum-pinned actionlint CI.
+
+### Security
+
+- Limit the source mounted into build and verification containers to `src/`, preventing repository-level keys and checkout metadata from becoming readable inside the plugin build container.
+
 ## [0.3.0] - 2026-08-17
 
 ### Added

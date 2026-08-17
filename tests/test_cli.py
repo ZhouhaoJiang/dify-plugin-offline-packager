@@ -21,6 +21,10 @@ class CliTest(unittest.TestCase):
             Path("plugin-offline-linux-amd64.difypkg"),
         )
 
+    def test_build_container_mount_is_limited_to_worker_source(self) -> None:
+        self.assertEqual(cli.WORKER_SOURCE, cli.ROOT / "src")
+        self.assertNotEqual(cli.WORKER_SOURCE, cli.ROOT)
+
     def test_runtime_errors_rejects_python_mismatch(self) -> None:
         selection = cli.select_runtime(cli.CATALOG, "dify-compose-3.12.0")
         probe = {
